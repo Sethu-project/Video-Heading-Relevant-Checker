@@ -51,7 +51,6 @@ def score_relevance(heading, content_text):
     import json
     return json.loads(response.choices[0].message.content)
 
-
 # ----------------------------------------------
 # ---------- STREAMLIT UI ----------
 # ----------------------------------------------
