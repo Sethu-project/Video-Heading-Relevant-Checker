@@ -1,0 +1,94 @@
+import streamlit as st
+import tempfile
+import os
+from moviepy.editor import VideoFileClip
+import whisper
+from openai import OpenAI
+
+# ---------- AI SETTINGS ----------
+client = OpenAI(api_key='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')  # replace with your key
+whisper_model = whisper.load_model("small")  # speech-to-text model
+
+# ---------- FUNCTIONS ----------
+
+def extract_audio(video_path, output_audio_path):
+    """Extracts audio from a video file."""
+    video = VideoFileClip(video_path)
+    video.audio.write_audiofile(output_audio_path, logger=None)
+    return output_audio_path
+
+
+def transcribe_audio(audio_path):
+    """Converts audio to text using Whisper."""
+    result = whisper_model.transcribe(audio_path)
+    return result["text"]
+
+
+def score_relevance(heading, content_text):
+    """Uses LLM to check how well the content matches the heading."""
+    prompt = f"""
+    You are a video evaluator system.
+
+    Heading: {heading}
+
+    Video Content (transcribed): {content_text}
+
+    Task:
+    - Give a **relevance score (0 to 100)** for how well the heading matches the content.
+    - Provide a short explanation.
+    - Output in JSON format:
+      {{
+        "score": <number>,
+        "remarks": "<text>"
+      }}
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    import json
+    return json.loads(response.choices[0].message.content)
+
+
+# ----------------------------------------------
+# ---------- STREAMLIT UI ----------
+# ----------------------------------------------
+
+st.title("🎬 Video Heading vs Content Relevancy Checker")
+st.write("Upload videos + headings → get AI-based relevance score.")
+
+uploaded_files = st.file_uploader("Upload one or more video files", 
+                                  type=["mp4", "mkv", "mov"],
+                                  accept_multiple_files=True)
+
+if uploaded_files:
+
+    for file in uploaded_files:
+        st.subheader(f"📌 File: {file.name}")
+        
+        heading = st.text_input(f"Enter heading/title for {file.name}")
+
+        if st.button(f"Process {file.name}"):
+
+            with st.spinner("Extracting audio..."):
+                temp_video = tempfile.NamedTemporaryFile(delete=False)
+                temp_video.write(file.read())
+                temp_video_path = temp_video.name
+
+                audio_path = temp_video_path + ".wav"
+                extract_audio(temp_video_path, audio_path)
+
+            with st.spinner("Transcribing video to text..."):
+                text = transcribe_audio(audio_path)
+
+            with st.spinner("Scoring relevance..."):
+                result = score_relevance(heading, text)
+
+            st.success("Done!")
+            st.json(result)
+
+            # Clean temporary files
+            os.remove(temp_video_path)
+            os.remove(audio_path)
